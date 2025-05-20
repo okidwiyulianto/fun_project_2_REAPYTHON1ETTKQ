@@ -9,8 +9,8 @@ MODEL = "deepseek/deepseek-chat-v3-0324"
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # --- Emoji Lucu ---
-USER_EMOJIS = ["👤", "👋", "👨‍💻", "👩‍💻", "🙋", "🌟"]
-BOT_EMOJIS = ["🤖", "🧠", "🦾", "🤩", "🧿", "🦋"]
+USER_EMOJIS = ["👨‍💻"]
+BOT_EMOJIS = ["🤖"]
 ERROR_EMOJIS = ["🙊", "🙈", "💔", "🌧️"]
 
 # --- Custom CSS untuk Chat Bubbles ---
@@ -156,13 +156,6 @@ if "messages" not in st.session_state:
     
 if "waiting_for_response" not in st.session_state:
     st.session_state.waiting_for_response = False
-
-# Tombol hapus chat menggunakan Streamlit button (dengan CSS kustom)
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    if st.button("🗑️ Hapus Chat", key="clear_button", use_container_width=True, type="primary", help="Hapus semua riwayat percakapan"):
-        clear_chat()
-        st.rerun()
 
 # Tampilkan riwayat chat
 chat_container = st.container()
