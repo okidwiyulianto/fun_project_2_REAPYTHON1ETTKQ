@@ -29,15 +29,15 @@ if "pinned_messages" not in st.session_state:
 if "chat_histories" not in st.session_state:
     st.session_state.chat_histories = {}
 if "api_key" not in st.session_state:
-    st.session_state.api_key = "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"
+    st.session_state.api_key = ""  # Empty by default, user must enter their own key
 if "user_message" not in st.session_state:
     st.session_state.user_message = ""
 
 # Define available models
 MODELS = {
-    "Claude": "anthropic/claude-3-opus",
-    "GPT-4": "openai/gpt-4-turbo",
-    "DeepSeek": "deepseek/deepseek-coder"
+    "DeepSeek R1": "deepseek/deepseek-r1-distill-llama-70b",
+    "Gemini": "google/gemini-2.0-flash-experiment",
+    "DeepSeek": "deepseek/deepseek-chat-v3-0324"
 }
 
 # Custom CSS for styling
@@ -229,11 +229,17 @@ def load_css():
 
 # Function to call OpenRouter API
 def get_ai_response(messages, model):
+    # Check if API key is provided
+    if not st.session_state.api_key:
+        return "Please enter your OpenRouter API key in the sidebar to use the chatbot."
+    
     url = "https://openrouter.ai/api/v1/chat/completions"
     
+    # Strictly follow OpenRouter.ai documentation for authentication
     headers = {
         "Authorization": f"Bearer {st.session_state.api_key}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost:8501/"  # Changed to http instead of https
     }
     
     data = {
@@ -242,12 +248,26 @@ def get_ai_response(messages, model):
     }
     
     try:
+        # Print debug info
+        st.write(f"Sending request to: {url}")
+        st.write(f"Using model: {model}")
+        
         response = requests.post(url, headers=headers, json=data)
-        response.raise_for_status()  # Raise exception for HTTP errors
+        
+        # Print response status for debugging
+        st.write(f"Response status: {response.status_code}")
+        
+        if response.status_code != 200:
+            st.error(f"Error response: {response.text}")
+            return f"Error: API returned status code {response.status_code}. Please check your API key and try again."
+        
         return response.json()["choices"][0]["message"]["content"]
     except requests.exceptions.RequestException as e:
         st.error(f"Error calling OpenRouter API: {str(e)}")
-        return "Sorry, I encountered an error while processing your request. Please try again."
+        if hasattr(e, 'response') and e.response is not None:
+            st.error(f"Response status: {e.response.status_code}")
+            st.error(f"Response text: {e.response.text}")
+        return "Sorry, I encountered an error while processing your request. Please check your API key and internet connection."
 
 # Function to save chat history to CSV
 def save_chat_to_csv(messages, filename="chat_history.csv"):
@@ -352,7 +372,7 @@ def handle_message_submit():
         st.session_state.user_message = ""
         
         # Force a rerun to update the UI and process the AI response
-        st.experimental_rerun()
+        st.rerun()
 
 # Main function
 def main():
@@ -363,16 +383,34 @@ def main():
     with st.sidebar:
         st.title("AI Chatbot Settings")
         
+        # API Key input with help text
+        st.markdown("### API Key")
+        st.markdown("""
+        Untuk menggunakan chatbot ini, Anda memerlukan API key dari [OpenRouter.ai](https://openrouter.ai/).
+        
+        Langkah mendapatkan API key:
+        1. Buat akun di [OpenRouter.ai](https://openrouter.ai/)
+        2. Masuk ke dashboard
+        3. Buat API key baru
+        4. Salin dan tempel API key di bawah ini
+        """)
+        
+        api_key_input = st.text_input(
+            "OpenRouter API Key", 
+            value=st.session_state.api_key,
+            type="password",
+            help="Masukkan API key dari OpenRouter.ai"
+        )
+        if api_key_input != st.session_state.api_key:
+            st.session_state.api_key = api_key_input
+            st.success("API Key updated!")
+        
         # Model selection
         selected_model = st.selectbox(
             "Select AI Model",
             list(MODELS.keys()),
             index=0
         )
-        
-        # Theme selection (simplified for now)
-        st.subheader("Theme")
-        st.write("Current theme: Default (#f4f3fa background)")
         
         # Chat history management
         st.subheader("Chat Management")
@@ -388,17 +426,27 @@ def main():
                 st.session_state.chat_histories[st.session_state.current_chat_name] = st.session_state.messages.copy()
                 st.success(f"Chat '{st.session_state.current_chat_name}' saved!")
         
-        # Load saved chat
+        # Load and delete saved chat
         if st.session_state.chat_histories:
             selected_chat = st.selectbox(
-                "Load Saved Chat",
+                "Select Saved Chat",
                 list(st.session_state.chat_histories.keys())
             )
             
-            if st.button("Load Selected Chat"):
-                st.session_state.messages = st.session_state.chat_histories[selected_chat].copy()
-                st.session_state.current_chat_name = selected_chat
-                st.experimental_rerun()
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("Load Chat"):
+                    st.session_state.messages = st.session_state.chat_histories[selected_chat].copy()
+                    st.session_state.current_chat_name = selected_chat
+                    st.rerun()
+            
+            with col2:
+                if st.button("Delete Chat"):
+                    if selected_chat in st.session_state.chat_histories:
+                        del st.session_state.chat_histories[selected_chat]
+                        st.success(f"Chat '{selected_chat}' deleted!")
+                        st.rerun()
         
         # Download chat history
         if st.session_state.messages:
@@ -407,11 +455,15 @@ def main():
         # Clear chat
         if st.button("Clear Current Chat"):
             st.session_state.messages = []
-            st.experimental_rerun()
+            st.rerun()
     
     # Main chat interface
     st.title("AI Chatbot")
     st.write("Chat with AI using different models from OpenRouter.ai")
+    
+    # API key warning
+    if not st.session_state.api_key:
+        st.warning("⚠️ Please enter your OpenRouter API key in the sidebar to use the chatbot.")
     
     # Display chat messages
     display_messages()
@@ -433,13 +485,14 @@ def main():
             
             # Refresh display
             time.sleep(0.5)  # Small delay for animation effect
-            st.experimental_rerun()
+            st.rerun()
     
     # Input for new message - using on_change callback to handle submission
     st.text_input(
         "Type your message here...", 
         key="user_message",
-        on_change=handle_message_submit
+        on_change=handle_message_submit,
+        disabled=not st.session_state.api_key  # Disable if no API key
     )
     
     # JavaScript for keyboard shortcuts and interactivity
