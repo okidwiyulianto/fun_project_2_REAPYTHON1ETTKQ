@@ -30,6 +30,8 @@ if "chat_histories" not in st.session_state:
     st.session_state.chat_histories = {}
 if "api_key" not in st.session_state:
     st.session_state.api_key = "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"
+if "user_message" not in st.session_state:
+    st.session_state.user_message = ""
 
 # Define available models
 MODELS = {
@@ -335,6 +337,23 @@ def display_pinned_messages():
             </div>
             """, unsafe_allow_html=True)
 
+# Callback function for message submission
+def handle_message_submit():
+    if st.session_state.user_message:
+        # Get the message from session state
+        user_input = st.session_state.user_message
+        
+        # Add user message to chat
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        user_message = {"role": "user", "content": user_input, "timestamp": timestamp}
+        st.session_state.messages.append(user_message)
+        
+        # Clear the input field by setting the session state variable
+        st.session_state.user_message = ""
+        
+        # Force a rerun to update the UI and process the AI response
+        st.experimental_rerun()
+
 # Main function
 def main():
     # Load custom CSS
@@ -397,16 +416,8 @@ def main():
     # Display chat messages
     display_messages()
     
-    # Input for new message
-    user_input = st.text_input("Type your message here...", key="user_input")
-    
-    # Handle message submission
-    if user_input:
-        # Add user message to chat
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        user_message = {"role": "user", "content": user_input, "timestamp": timestamp}
-        st.session_state.messages.append(user_message)
-        
+    # Process AI response if there are messages and the last one is from the user
+    if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
         # Display typing indicator
         with st.empty():
             display_typing_indicator()
@@ -422,10 +433,14 @@ def main():
             
             # Refresh display
             time.sleep(0.5)  # Small delay for animation effect
-        
-        # Clear input and rerun to update UI
-        st.session_state.user_input = ""
-        st.experimental_rerun()
+            st.experimental_rerun()
+    
+    # Input for new message - using on_change callback to handle submission
+    st.text_input(
+        "Type your message here...", 
+        key="user_message",
+        on_change=handle_message_submit
+    )
     
     # JavaScript for keyboard shortcuts and interactivity
     st.markdown("""
@@ -435,10 +450,9 @@ def main():
         if (e.key === 'Enter' && !e.shiftKey) {
             const inputElement = document.querySelector('input[aria-label="Type your message here..."]');
             if (document.activeElement === inputElement && inputElement.value.trim() !== '') {
-                const submitButton = Array.from(document.querySelectorAll('button')).find(el => el.innerText === 'Submit');
-                if (submitButton) {
-                    submitButton.click();
-                }
+                // Trigger the change event to activate the on_change callback
+                const event = new Event('change', { bubbles: true });
+                inputElement.dispatchEvent(event);
             }
         }
     });
