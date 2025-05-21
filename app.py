@@ -5,6 +5,7 @@ import time
 import datetime
 import random
 import os
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
 # Konfigurasi halaman Streamlit
 st.set_page_config(
@@ -23,8 +24,9 @@ COLORS = {
     "accent": "#0f2b5b"
 }
 
-# Daftar emoji yang akan digunakan secara acak
-EMOJIS = ["😊", "🤔", "🧐", "💡", "✨", "🚀", "🎯", "🔍", "📚", "💭", "🌟", "🎨", "🎮", "🎵", "🌈"]
+# Emoji tetap untuk user dan AI
+USER_EMOJI = "🧑‍💻"
+AI_EMOJI = "👽"
 
 # Daftar model AI yang tersedia di OpenRouter
 MODELS = {
@@ -46,10 +48,19 @@ if "selected_model" not in st.session_state:
 
 # Fungsi untuk mendapatkan respons dari OpenRouter API
 def get_ai_response(prompt, model):
-    api_key = "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"
+    # Gunakan API key dari environment variable jika ada, atau gunakan default
+    api_key = os.environ.get("OPENROUTER_API_KEY", "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")
+    
+    # Pastikan API key tidak kosong
+    if not api_key or api_key.strip() == "":
+        return "Error: API key tidak ditemukan. Silakan periksa kembali API key Anda."
+    
+    # Tambahkan HTTP_REFERER dan X-Title header sesuai dokumentasi OpenRouter
     headers = {
         "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost:8501",  # Diperlukan oleh OpenRouter
+        "X-Title": "Streamlit AI Chatbot"  # Diperlukan oleh OpenRouter
     }
     
     data = {
@@ -61,12 +72,31 @@ def get_ai_response(prompt, model):
     }
     
     try:
+        # Tambahkan logging untuk debugging
+        st.session_state.last_api_request = {
+            "url": "https://openrouter.ai/api/v1/chat/completions",
+            "headers": {k: v for k, v in headers.items() if k != "Authorization"},
+            "data": data
+        }
+        
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
-            data=json.dumps(data)
+            json=data  # Gunakan json parameter daripada data dengan json.dumps
         )
-        response.raise_for_status()  # Raise exception for HTTP errors
+        
+        # Log response status untuk debugging
+        st.session_state.last_api_status = response.status_code
+        
+        # Cek status code secara eksplisit
+        if response.status_code == 401:
+            return "Error 401: Unauthorized. API key tidak valid atau telah kedaluwarsa. Silakan periksa kembali API key Anda."
+        elif response.status_code == 403:
+            return "Error 403: Forbidden. Tidak memiliki izin untuk mengakses API ini."
+        elif response.status_code == 429:
+            return "Error 429: Terlalu banyak permintaan. Silakan coba lagi nanti."
+        
+        response.raise_for_status()  # Raise exception untuk HTTP errors lainnya
         
         result = response.json()
         if "choices" in result and len(result["choices"]) > 0:
@@ -75,12 +105,14 @@ def get_ai_response(prompt, model):
             return "Maaf, saya tidak dapat memproses permintaan Anda saat ini. Silakan coba lagi."
     
     except requests.exceptions.RequestException as e:
-        st.error(f"Error saat menghubungi API: {str(e)}")
-        return f"Terjadi kesalahan saat berkomunikasi dengan API: {str(e)}"
+        error_msg = f"Error saat menghubungi API: {str(e)}"
+        st.error(error_msg)
+        return error_msg
     
     except (KeyError, json.JSONDecodeError) as e:
-        st.error(f"Error saat memproses respons API: {str(e)}")
-        return "Terjadi kesalahan saat memproses respons dari API."
+        error_msg = f"Error saat memproses respons API: {str(e)}"
+        st.error(error_msg)
+        return error_msg
 
 # Custom CSS untuk styling
 def load_css():
@@ -257,7 +289,7 @@ def show_thinking_animation():
 def display_messages():
     for message in st.session_state.messages:
         if message["role"] == "user":
-            emoji = random.choice(EMOJIS)
+            emoji = USER_EMOJI
             st.markdown(f"""
             <div class="user-bubble">
                 <span class="emoji-prefix">{emoji}</span>
@@ -266,7 +298,7 @@ def display_messages():
             </div>
             """, unsafe_allow_html=True)
         else:
-            emoji = random.choice(EMOJIS)
+            emoji = AI_EMOJI
             st.markdown(f"""
             <div class="ai-bubble">
                 <span class="emoji-prefix">{emoji}</span>
@@ -332,7 +364,7 @@ def main():
         # Tombol untuk menghapus riwayat chat
         if st.button("🗑️ Hapus Riwayat Chat", key="clear"):
             st.session_state.messages = []
-            st.experimental_rerun()
+            st.rerun()
     
     # Container untuk chat
     chat_container = st.container()
@@ -383,7 +415,7 @@ def main():
         
         # Hapus animasi "thinking" dan refresh tampilan
         thinking_placeholder.empty()
-        st.experimental_rerun()
+        st.rerun()
 
 if __name__ == "__main__":
     main()
