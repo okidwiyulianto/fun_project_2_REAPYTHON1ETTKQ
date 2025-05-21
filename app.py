@@ -1,421 +1,461 @@
 import streamlit as st
 import requests
 import json
+import pandas as pd
 import time
 import datetime
-import random
 import os
-from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+import csv
+import base64
+from io import StringIO
 
-# Konfigurasi halaman Streamlit
+# Set page configuration
 st.set_page_config(
     page_title="AI Chatbot",
-    page_icon="🤖",
-    layout="wide"
+    page_icon="👽",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Definisi warna sesuai preferensi pengguna
-COLORS = {
-    "background": "#f4f3fa",
-    "text_dark": "#000000",
-    "text_medium": "#2b2b2b",
-    "primary": "#75b2dd",
-    "secondary": "#fcd116",
-    "accent": "#0f2b5b"
-}
-
-# Emoji tetap untuk user dan AI
-USER_EMOJI = "🧑‍💻"
-AI_EMOJI = "👽"
-
-# Daftar model AI yang tersedia di OpenRouter
-MODELS = {
-    "Claude 3 Opus": "anthropic/claude-3-opus:beta",
-    "Claude 3 Sonnet": "anthropic/claude-3-sonnet:beta",
-    "Claude 3 Haiku": "anthropic/claude-3-haiku",
-    "GPT-4o": "openai/gpt-4o",
-    "GPT-4 Turbo": "openai/gpt-4-turbo",
-    "Mistral Large": "mistralai/mistral-large",
-    "Llama 3 70B": "meta-llama/llama-3-70b-instruct"
-}
-
-# Inisialisasi session state jika belum ada
+# Initialize session state variables
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "current_chat_name" not in st.session_state:
+    st.session_state.current_chat_name = f"Chat {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
+if "pinned_messages" not in st.session_state:
+    st.session_state.pinned_messages = []
+if "chat_histories" not in st.session_state:
+    st.session_state.chat_histories = {}
+if "api_key" not in st.session_state:
+    st.session_state.api_key = "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"
 
-if "selected_model" not in st.session_state:
-    st.session_state.selected_model = "Claude 3 Haiku"
+# Define available models
+MODELS = {
+    "Claude": "anthropic/claude-3-opus",
+    "GPT-4": "openai/gpt-4-turbo",
+    "DeepSeek": "deepseek/deepseek-coder"
+}
 
-# Fungsi untuk mendapatkan respons dari OpenRouter API
-def get_ai_response(prompt, model):
-    # Gunakan API key dari environment variable jika ada, atau gunakan default
-    api_key = os.environ.get("OPENROUTER_API_KEY", "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")
-    
-    # Pastikan API key tidak kosong
-    if not api_key or api_key.strip() == "":
-        return "Error: API key tidak ditemukan. Silakan periksa kembali API key Anda."
-    
-    # Tambahkan HTTP_REFERER dan X-Title header sesuai dokumentasi OpenRouter
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "http://localhost:8501",  # Diperlukan oleh OpenRouter
-        "X-Title": "Streamlit AI Chatbot"  # Diperlukan oleh OpenRouter
-    }
-    
-    data = {
-        "model": MODELS[model],
-        "messages": [
-            {"role": "system", "content": "Kamu adalah asisten AI yang ramah, membantu, dan informatif. Berikan jawaban yang jelas dan bermanfaat."},
-            {"role": "user", "content": prompt}
-        ]
-    }
-    
-    try:
-        # Tambahkan logging untuk debugging
-        st.session_state.last_api_request = {
-            "url": "https://openrouter.ai/api/v1/chat/completions",
-            "headers": {k: v for k, v in headers.items() if k != "Authorization"},
-            "data": data
-        }
-        
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=data  # Gunakan json parameter daripada data dengan json.dumps
-        )
-        
-        # Log response status untuk debugging
-        st.session_state.last_api_status = response.status_code
-        
-        # Cek status code secara eksplisit
-        if response.status_code == 401:
-            return "Error 401: Unauthorized. API key tidak valid atau telah kedaluwarsa. Silakan periksa kembali API key Anda."
-        elif response.status_code == 403:
-            return "Error 403: Forbidden. Tidak memiliki izin untuk mengakses API ini."
-        elif response.status_code == 429:
-            return "Error 429: Terlalu banyak permintaan. Silakan coba lagi nanti."
-        
-        response.raise_for_status()  # Raise exception untuk HTTP errors lainnya
-        
-        result = response.json()
-        if "choices" in result and len(result["choices"]) > 0:
-            return result["choices"][0]["message"]["content"]
-        else:
-            return "Maaf, saya tidak dapat memproses permintaan Anda saat ini. Silakan coba lagi."
-    
-    except requests.exceptions.RequestException as e:
-        error_msg = f"Error saat menghubungi API: {str(e)}"
-        st.error(error_msg)
-        return error_msg
-    
-    except (KeyError, json.JSONDecodeError) as e:
-        error_msg = f"Error saat memproses respons API: {str(e)}"
-        st.error(error_msg)
-        return error_msg
-
-# Custom CSS untuk styling
+# Custom CSS for styling
 def load_css():
-    # Baca file CSS eksternal jika ada
-    css_file = os.path.join(os.path.dirname(__file__), "styles.css")
-    external_css = ""
-    if os.path.exists(css_file):
-        with open(css_file, "r") as f:
-            external_css = f.read()
-    
-    # Gabungkan dengan CSS dasar
-    st.markdown(f"""
+    st.markdown("""
     <style>
-    .main {{
-        background-color: {COLORS["background"]};
-    }}
+    /* Main background color */
+    .stApp {
+        background-color: #f4f3fa;
+    }
     
-    .chat-container {{
-        padding: 20px;
-        border-radius: 15px;
-        margin-bottom: 20px;
-        max-height: 600px;
-        overflow-y: auto;
-    }}
-    
-    .user-bubble {{
-        background-color: {COLORS["primary"]};
-        color: white;
-        border-radius: 18px 18px 0 18px;
-        padding: 12px 18px;
+    /* User message styling */
+    .user-message {
+        background-color: #0f2b5b;
+        color: #ffffff;
+        border-radius: 20px 20px 5px 20px;
+        padding: 15px;
         margin: 10px 0;
         max-width: 80%;
         float: right;
-        clear: both;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         position: relative;
-        animation: slide-in-right 0.3s ease-out;
-    }}
+        animation: fadeIn 0.5s;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
     
-    .ai-bubble {{
-        background-color: {COLORS["secondary"]};
-        color: {COLORS["text_dark"]};
-        border-radius: 18px 18px 18px 0;
-        padding: 12px 18px;
+    /* AI message styling */
+    .ai-message {
+        background-color: #fcd116;
+        color: #000000;
+        border-radius: 20px 20px 20px 5px;
+        padding: 15px;
         margin: 10px 0;
         max-width: 80%;
         float: left;
-        clear: both;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         position: relative;
-        animation: slide-in-left 0.3s ease-out;
-    }}
+        animation: fadeIn 0.5s;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
     
-    .timestamp {{
+    /* Timestamp styling */
+    .timestamp {
         font-size: 0.7em;
-        color: rgba(255,255,255,0.7);
+        opacity: 0.7;
         margin-top: 5px;
         text-align: right;
-    }}
+    }
     
-    .ai-timestamp {{
-        color: rgba(0,0,0,0.5);
-    }}
-    
-    .emoji-prefix {{
-        margin-right: 8px;
-        font-size: 1.2em;
-    }}
-    
-    @keyframes slide-in-right {{
-        0% {{ transform: translateX(100px); opacity: 0; }}
-        100% {{ transform: translateX(0); opacity: 1; }}
-    }}
-    
-    @keyframes slide-in-left {{
-        0% {{ transform: translateX(-100px); opacity: 0; }}
-        100% {{ transform: translateX(0); opacity: 1; }}
-    }}
-    
-    @keyframes thinking {{
-        0% {{ opacity: 0.3; }}
-        50% {{ opacity: 1; }}
-        100% {{ opacity: 0.3; }}
-    }}
-    
-    .thinking-animation {{
+    /* Message container */
+    .message-container {
         display: flex;
-        align-items: center;
-        margin: 10px 0;
-        float: left;
-        clear: both;
-        animation: slide-in-left 0.3s ease-out;
-    }}
+        flex-direction: column;
+        width: 100%;
+        overflow: hidden;
+        margin-bottom: 15px;
+    }
     
-    .thinking-dot {{
-        height: 12px;
-        width: 12px;
-        margin: 0 3px;
-        background-color: {COLORS["accent"]};
+    /* User message container */
+    .user-container {
+        display: flex;
+        justify-content: flex-end;
+        width: 100%;
+    }
+    
+    /* AI message container */
+    .ai-container {
+        display: flex;
+        justify-content: flex-start;
+        width: 100%;
+    }
+    
+    /* Emoji styling */
+    .emoji {
+        font-size: 1.5em;
+        margin-right: 10px;
+        margin-left: 10px;
+        align-self: flex-end;
+    }
+    
+    /* Animation for messages */
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Animation for typing indicator */
+    .typing-indicator {
+        display: flex;
+        padding: 10px;
+        background-color: #fcd116;
+        border-radius: 20px;
+        margin: 10px 0;
+        width: fit-content;
+    }
+    
+    .typing-indicator span {
+        height: 10px;
+        width: 10px;
+        background-color: #333;
         border-radius: 50%;
         display: inline-block;
-        animation: thinking 1.5s infinite;
-    }}
+        margin: 0 2px;
+        animation: bounce 1.5s infinite ease-in-out;
+    }
     
-    .thinking-dot:nth-child(2) {{
+    .typing-indicator span:nth-child(2) {
         animation-delay: 0.2s;
-    }}
+    }
     
-    .thinking-dot:nth-child(3) {{
+    .typing-indicator span:nth-child(3) {
         animation-delay: 0.4s;
-    }}
+    }
     
-    .stTextInput input {{
-        border-radius: 25px;
-        border: 2px solid {COLORS["primary"]};
-        padding: 10px 15px;
-        font-size: 16px;
-    }}
+    @keyframes bounce {
+        0%, 60%, 100% { transform: translateY(0); }
+        30% { transform: translateY(-5px); }
+    }
     
-    .stButton > button {{
-        border-radius: 25px;
-        background-color: {COLORS["accent"]};
-        color: white;
+    /* Pin button styling */
+    .pin-button {
+        background-color: transparent;
         border: none;
-        padding: 10px 25px;
-        font-weight: bold;
+        color: #555;
+        cursor: pointer;
+        float: right;
+        margin-left: 10px;
+    }
+    
+    .pin-button:hover {
+        color: #000;
+    }
+    
+    /* Pinned message styling */
+    .pinned-message {
+        border-left: 4px solid #fcd116;
+        padding-left: 10px;
+        margin: 10px 0;
+        background-color: rgba(252, 209, 22, 0.1);
+    }
+    
+    /* Clear button styling */
+    .stButton button {
+        background-color: #0f2b5b;
+        color: white;
+        border-radius: 20px;
+        border: none;
+        padding: 10px 20px;
         transition: all 0.3s;
-    }}
+    }
     
-    .stButton > button:hover {{
-        background-color: {COLORS["primary"]};
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }}
+    .stButton button:hover {
+        background-color: #0a1f42;
+        transform: scale(1.05);
+    }
     
-    .model-selector {{
-        background-color: white;
-        border-radius: 10px;
-        padding: 10px;
-        margin-bottom: 20px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    }}
+    /* Sidebar styling */
+    .css-1d391kg {
+        background-color: #f0f0f8;
+    }
     
-    .clear-button {{
-        background-color: #ff6b6b !important;
-    }}
+    /* Input box styling */
+    .stTextInput input {
+        border-radius: 20px;
+        border: 1px solid #ddd;
+        padding: 10px 15px;
+    }
     
-    .download-button {{
-        background-color: #4caf50 !important;
-    }}
+    /* Selectbox styling */
+    .stSelectbox div[data-baseweb="select"] {
+        border-radius: 20px;
+    }
     
-    .stSelectbox {{
-        margin-bottom: 0 !important;
-    }}
+    /* Download button styling */
+    .download-button {
+        display: inline-block;
+        background-color: #0f2b5b;
+        color: white;
+        padding: 10px 20px;
+        text-decoration: none;
+        border-radius: 20px;
+        margin-top: 10px;
+        text-align: center;
+    }
     
-    {external_css}
+    .download-button:hover {
+        background-color: #0a1f42;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# Fungsi untuk menampilkan animasi "thinking"
-def show_thinking_animation():
-    with st.container():
-        st.markdown("""
-        <div class="thinking-animation">
-            <div class="ai-bubble" style="padding: 8px 15px;">
-                <div class="thinking-dot"></div>
-                <div class="thinking-dot"></div>
-                <div class="thinking-dot"></div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+# Function to call OpenRouter API
+def get_ai_response(messages, model):
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    
+    headers = {
+        "Authorization": f"Bearer {st.session_state.api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": model,
+        "messages": messages
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()  # Raise exception for HTTP errors
+        return response.json()["choices"][0]["message"]["content"]
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error calling OpenRouter API: {str(e)}")
+        return "Sorry, I encountered an error while processing your request. Please try again."
 
-# Fungsi untuk menampilkan pesan dalam chat
+# Function to save chat history to CSV
+def save_chat_to_csv(messages, filename="chat_history.csv"):
+    try:
+        with open(os.path.join("assets", filename), 'w', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            writer.writerow(["Role", "Content", "Timestamp"])
+            for msg in messages:
+                writer.writerow([msg["role"], msg["content"], msg.get("timestamp", "")])
+        return os.path.join("assets", filename)
+    except Exception as e:
+        st.error(f"Error saving chat history: {str(e)}")
+        return None
+
+# Function to download chat history
+def get_csv_download_link(messages, filename="chat_history.csv"):
+    # Create a CSV string from messages
+    csv_string = StringIO()
+    writer = csv.writer(csv_string)
+    writer.writerow(["Role", "Content", "Timestamp"])
+    for msg in messages:
+        writer.writerow([msg["role"], msg["content"], msg.get("timestamp", "")])
+    
+    # Encode the CSV string to base64
+    b64 = base64.b64encode(csv_string.getvalue().encode()).decode()
+    
+    # Create download link
+    href = f'<a href="data:file/csv;base64,{b64}" download="{filename}" class="download-button">Download Chat History</a>'
+    return href
+
+# Function to display messages with custom styling
 def display_messages():
-    for message in st.session_state.messages:
-        if message["role"] == "user":
-            emoji = USER_EMOJI
+    for i, message in enumerate(st.session_state.messages):
+        role = message["role"]
+        content = message["content"]
+        timestamp = message.get("timestamp", "")
+        
+        if role == "user":
             st.markdown(f"""
-            <div class="user-bubble">
-                <span class="emoji-prefix">{emoji}</span>
-                {message["content"]}
-                <div class="timestamp">{message["timestamp"]}</div>
+            <div class="message-container">
+                <div class="user-container">
+                    <div class="user-message">
+                        {content}
+                        <div class="timestamp">{timestamp}</div>
+                    </div>
+                    <div class="emoji">🧑‍💻</div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
         else:
-            emoji = AI_EMOJI
             st.markdown(f"""
-            <div class="ai-bubble">
-                <span class="emoji-prefix">{emoji}</span>
-                {message["content"]}
-                <div class="timestamp ai-timestamp">{message["timestamp"]}</div>
+            <div class="message-container">
+                <div class="ai-container">
+                    <div class="emoji">👽</div>
+                    <div class="ai-message">
+                        {content}
+                        <div class="timestamp">{timestamp}</div>
+                    </div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
 
-# Fungsi untuk menyimpan riwayat chat ke file
-def save_chat_history():
-    if not st.session_state.messages:
-        st.warning("Tidak ada riwayat chat untuk disimpan.")
-        return
-    
-    chat_history = ""
-    for message in st.session_state.messages:
-        prefix = "Anda" if message["role"] == "user" else "AI"
-        chat_history += f"{prefix} ({message['timestamp']}): {message['content']}\n\n"
-    
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"chat_history_{timestamp}.txt"
-    
-    with open(filename, "w", encoding="utf-8") as f:
-        f.write(chat_history)
-    
-    return filename
+# Function to display typing indicator
+def display_typing_indicator():
+    st.markdown("""
+    <div class="message-container">
+        <div class="ai-container">
+            <div class="emoji">👽</div>
+            <div class="typing-indicator">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# Fungsi utama aplikasi
+# Function to display pinned messages
+def display_pinned_messages():
+    if st.session_state.pinned_messages:
+        st.sidebar.markdown("### Pinned Messages")
+        for i, pinned in enumerate(st.session_state.pinned_messages):
+            st.sidebar.markdown(f"""
+            <div class="pinned-message">
+                <strong>{pinned['role'].capitalize()}:</strong> {pinned['content'][:50]}...
+                <button class="pin-button" onclick="unpin({i})">📌</button>
+            </div>
+            """, unsafe_allow_html=True)
+
+# Main function
 def main():
+    # Load custom CSS
     load_css()
     
-    st.title("🤖 AI Chatbot")
-    st.markdown("Chat dengan AI menggunakan OpenRouter API")
-    
-    # Sidebar untuk pengaturan
+    # Sidebar for settings and options
     with st.sidebar:
-        st.header("Pengaturan")
+        st.title("AI Chatbot Settings")
         
-        # Pemilihan model
-        st.markdown('<div class="model-selector">', unsafe_allow_html=True)
+        # Model selection
         selected_model = st.selectbox(
-            "Pilih Model AI:",
+            "Select AI Model",
             list(MODELS.keys()),
-            index=list(MODELS.keys()).index(st.session_state.selected_model)
+            index=0
         )
-        st.session_state.selected_model = selected_model
-        st.markdown('</div>', unsafe_allow_html=True)
         
-        # Tombol untuk mengunduh riwayat chat
-        if st.button("💾 Unduh Riwayat Chat", key="download"):
-            filename = save_chat_history()
-            if filename:
-                with open(filename, "r", encoding="utf-8") as f:
-                    chat_content = f.read()
-                st.download_button(
-                    label="📥 Klik untuk Mengunduh",
-                    data=chat_content,
-                    file_name=filename,
-                    mime="text/plain",
-                    key="download_button"
-                )
+        # Theme selection (simplified for now)
+        st.subheader("Theme")
+        st.write("Current theme: Default (#f4f3fa background)")
         
-        # Tombol untuk menghapus riwayat chat
-        if st.button("🗑️ Hapus Riwayat Chat", key="clear"):
+        # Chat history management
+        st.subheader("Chat Management")
+        
+        # Rename current chat
+        new_chat_name = st.text_input("Rename Current Chat", st.session_state.current_chat_name)
+        if new_chat_name != st.session_state.current_chat_name:
+            st.session_state.current_chat_name = new_chat_name
+        
+        # Save current chat
+        if st.button("Save Current Chat"):
+            if st.session_state.messages:
+                st.session_state.chat_histories[st.session_state.current_chat_name] = st.session_state.messages.copy()
+                st.success(f"Chat '{st.session_state.current_chat_name}' saved!")
+        
+        # Load saved chat
+        if st.session_state.chat_histories:
+            selected_chat = st.selectbox(
+                "Load Saved Chat",
+                list(st.session_state.chat_histories.keys())
+            )
+            
+            if st.button("Load Selected Chat"):
+                st.session_state.messages = st.session_state.chat_histories[selected_chat].copy()
+                st.session_state.current_chat_name = selected_chat
+                st.experimental_rerun()
+        
+        # Download chat history
+        if st.session_state.messages:
+            st.markdown(get_csv_download_link(st.session_state.messages), unsafe_allow_html=True)
+        
+        # Clear chat
+        if st.button("Clear Current Chat"):
             st.session_state.messages = []
-            st.rerun()
+            st.experimental_rerun()
     
-    # Container untuk chat
-    chat_container = st.container()
+    # Main chat interface
+    st.title("AI Chatbot")
+    st.write("Chat with AI using different models from OpenRouter.ai")
     
-    # Input pengguna
-    with st.container():
-        col1, col2 = st.columns([5, 1])
-        with col1:
-            user_input = st.text_input("Ketik pesan Anda di sini:", key="user_input")
-        with col2:
-            send_button = st.button("Kirim")
+    # Display chat messages
+    display_messages()
     
-    # Menampilkan chat
-    with chat_container:
-        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-        display_messages()
-        st.markdown('</div>', unsafe_allow_html=True)
+    # Input for new message
+    user_input = st.text_input("Type your message here...", key="user_input")
     
-    # Proses input pengguna
-    if (user_input and send_button) or (user_input and st.session_state.get("user_input_submitted", False)):
-        # Reset flag
-        st.session_state.user_input_submitted = False
-        
-        # Tambahkan pesan pengguna ke riwayat
+    # Handle message submission
+    if user_input:
+        # Add user message to chat
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        st.session_state.messages.append({
-            "role": "user",
-            "content": user_input,
-            "timestamp": timestamp
-        })
+        user_message = {"role": "user", "content": user_input, "timestamp": timestamp}
+        st.session_state.messages.append(user_message)
         
-        # Tampilkan animasi "thinking"
-        with chat_container:
-            thinking_placeholder = st.empty()
-            with thinking_placeholder:
-                show_thinking_animation()
+        # Display typing indicator
+        with st.empty():
+            display_typing_indicator()
+            
+            # Get AI response
+            api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
+            ai_response = get_ai_response(api_messages, MODELS[selected_model])
+            
+            # Add AI response to chat
+            timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+            ai_message = {"role": "assistant", "content": ai_response, "timestamp": timestamp}
+            st.session_state.messages.append(ai_message)
+            
+            # Refresh display
+            time.sleep(0.5)  # Small delay for animation effect
         
-        # Dapatkan respons dari AI
-        ai_response = get_ai_response(user_input, st.session_state.selected_model)
-        
-        # Tambahkan respons AI ke riwayat
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": ai_response,
-            "timestamp": timestamp
-        })
-        
-        # Hapus animasi "thinking" dan refresh tampilan
-        thinking_placeholder.empty()
-        st.rerun()
+        # Clear input and rerun to update UI
+        st.session_state.user_input = ""
+        st.experimental_rerun()
+    
+    # JavaScript for keyboard shortcuts and interactivity
+    st.markdown("""
+    <script>
+    // Enter key to submit
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            const inputElement = document.querySelector('input[aria-label="Type your message here..."]');
+            if (document.activeElement === inputElement && inputElement.value.trim() !== '') {
+                const submitButton = Array.from(document.querySelectorAll('button')).find(el => el.innerText === 'Submit');
+                if (submitButton) {
+                    submitButton.click();
+                }
+            }
+        }
+    });
+    
+    // Function to unpin messages
+    function unpin(index) {
+        window.parent.postMessage({
+            type: 'streamlit:setComponentValue',
+            value: {action: 'unpin', index: index}
+        }, '*');
+    }
+    </script>
+    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
+    # Create assets directory if it doesn't exist
+    os.makedirs("assets", exist_ok=True)
+    
+    # Run the app
     main()
