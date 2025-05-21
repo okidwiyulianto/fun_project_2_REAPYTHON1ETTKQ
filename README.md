@@ -1,12 +1,13 @@
-# AI Chatbot dengan Streamlit dan OpenRouter API
+# 🤖✨ AI Chatbot dengan Streamlit dan OpenRouter API
 
-Aplikasi chatbot AI ini dibuat menggunakan Streamlit dan OpenRouter API, dengan tampilan chat bubble yang unik dan lucu, dilengkapi emoji, timestamp, dan animasi saat proses respons.
+Aplikasi chatbot AI ini dibuat menggunakan Streamlit dan OpenRouter API, dengan tampilan chat bubble yang unik dan lucu, dilengkapi emoji, timestamp, animasi saat proses respons dan hanya dapat digunakan dengan sistem API key pribadi anda sendiri. Aplikasi tetap fokus pada privasi dan keamanan.
 
 ## Fitur Utama
 
+- 🔥 Menggunakan API Key pribadi (data tidak dikirim ke pihak ketiga!)
 - 🤖 Integrasi dengan berbagai model AI melalui OpenRouter API
 - 💬 Tampilan chat bubble yang unik dan lucu
-- 😊 Emoji acak pada setiap pesan
+- 😊 Emoji
 - 🕒 Timestamp pada setiap pesan
 - ✨ Animasi saat proses respons
 - 🔄 Opsi untuk mengubah model AI yang digunakan
@@ -17,18 +18,20 @@ Aplikasi chatbot AI ini dibuat menggunakan Streamlit dan OpenRouter API, dengan 
 ## Persyaratan
 
 - Python 3.6 atau lebih baru
-- Streamlit
-- Requests
+- Ada di requirements.txt
 
 ## Instalasi
 
 1. Pastikan Python sudah terinstal di komputer Anda
 2. Clone atau download repository ini
+```bash
+git clone https://github.com/okidwiyulianto/fun_project_2_REAPYTHON1ETTKQ.git
+```
 3. Buka terminal dan navigasi ke direktori proyek
 4. Instal dependensi yang diperlukan:
 
 ```bash
-pip install streamlit requests
+pip install requirements.txt
 ```
 
 ## Cara Penggunaan
@@ -42,7 +45,7 @@ streamlit run app.py
 2. Aplikasi akan terbuka di browser Anda secara otomatis (biasanya di http://localhost:8501)
 3. Ketik pesan Anda di kolom input di bagian bawah layar
 4. Klik tombol "Kirim" atau tekan Enter untuk mengirim pesan
-5. Tunggu respons dari AI (akan ada animasi "thinking" saat AI sedang memproses)
+5. Tunggu respons dari AI
 6. Gunakan sidebar untuk:
    - Mengubah model AI yang digunakan
    - Mengunduh riwayat chat
@@ -50,32 +53,9 @@ streamlit run app.py
 
 ## Kustomisasi
 
-### Mengubah Warna
-
-Anda dapat mengubah skema warna aplikasi dengan mengedit variabel `COLORS` di file `app.py`:
-
-```python
-COLORS = {
-    "background": "#f4f3fa",
-    "text_dark": "#000000",
-    "text_medium": "#2b2b2b",
-    "primary": "#75b2dd",
-    "secondary": "#fcd116",
-    "accent": "#0f2b5b"
-}
-```
-
-### Mengubah Emoji
-
-Anda dapat menambahkan atau mengubah emoji yang digunakan dengan mengedit variabel `EMOJIS` di file `app.py`:
-
-```python
-EMOJIS = ["😊", "🤔", "🧐", "💡", "✨", "🚀", "🎯", "🔍", "📚", "💭", "🌟", "🎨", "🎮", "🎵", "🌈"]
-```
-
 ### Mengubah Model AI
 
-Anda dapat menambahkan atau mengubah model AI yang tersedia dengan mengedit variabel `MODELS` di file `app.py`:
+Anda dapat menambahkan atau mengubah pilihan model AI yang tersedia dengan mengedit variabel `MODELS`
 
 ```python
 MODELS = {
@@ -105,8 +85,8 @@ Aplikasi ini dilengkapi dengan penanganan error yang komprehensif:
 
 ## Catatan Penting
 
-- API key OpenRouter sudah disertakan dalam kode, tetapi sebaiknya Anda menggantinya dengan API key Anda sendiri untuk penggunaan jangka panjang.
-- Aplikasi ini menggunakan OpenRouter API yang memungkinkan akses ke berbagai model AI dari berbagai penyedia.
+- Aplikasi hanya dapat digunakan jika menggunakan API key AI, untuk itu gunakan API key anda pribadi masing-masing.
+- Aplikasi ini dibuat dengan mengutamakan menggunakan OpenRouter API yang memungkinkan akses ke berbagai model AI dari berbagai penyedia.
 
 ## Troubleshooting
 
